@@ -1,0 +1,27 @@
+#ifndef _MY_CONFIG_H_
+#define _MY_CONFIG_H_
+
+#define BLYNK_HOST "fra1.blynk.cloud"
+
+#define BLYNK_ACCESS_TOKEN "HERE_YOUR_TOKEN"
+
+// array of different xiaomi flora MAC addresses
+char* FLORA_DEVICES[] = {
+    /*"C4:7C:8D:67:11:11",
+    "C4:7C:8D:67:22:22",*/
+    "C4:7C:8D:67:33:33"
+};
+
+// sleep between to runs in seconds
+#define SLEEP_DURATION 30 * 60
+// emergency hibernate countdown in seconds
+#define EMERGENCY_HIBERNATE 3 * 60
+// how often should the battery be read - in run count
+#define BATTERY_INTERVAL 6
+// how often should a device be retried in a run when something fails
+#define RETRY 3
+
+const char*   WIFI_SSID       = "HERE_THE_WIFI_SSID";
+const char*   WIFI_PASSWORD   = "HERE_THE_WIFI_PASSWORD";
+
+#endif
