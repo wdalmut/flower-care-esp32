@@ -41,6 +41,21 @@ void disconnectWifi() {
   Serial.println("WiFi disonnected");
 }
 
+char* getBlynkAccessToken(const char* deviceMacAddress) {
+  char* accessToken;
+
+  Serial.println("Looking for Blynk access token via MAC Address");
+
+  for (int i=0; i<deviceCount; i++) {
+    if (strcmp(deviceMacAddress, FLORA_DEVICES[i]) == 0) {
+      Serial.println("Access token for Blynk connection found");
+      accessToken = BLYNK_ACCESS_TOKENS[i];
+      break;
+    }
+  }
+
+  return accessToken;
+}
 
 BLEClient* getFloraClient(BLEAddress floraAddress) {
   BLEClient* floraClient = BLEDevice::createClient();
@@ -158,8 +173,10 @@ bool readFloraDataCharacteristic(BLERemoteService* floraService, String baseTopi
   }
 
   char buffer[512];
+  const char* deviceMacAddress = baseTopic.c_str();
+  char* blynkAccessToken = getBlynkAccessToken(deviceMacAddress);
 
-  snprintf(buffer, 512, "https://%s/external/api/batch/update?token=%s", BLYNK_HOST, BLYNK_ACCESS_TOKEN);
+  snprintf(buffer, 512, "https://%s/external/api/batch/update?token=%s", BLYNK_HOST, blynkAccessToken);
   snprintf(buffer+strlen(buffer), 512, "&A0=%f", temperature);; 
   snprintf(buffer+strlen(buffer), 512, "&A1=%d", moisture); 
   snprintf(buffer+strlen(buffer), 512, "&A3=%d", light);
@@ -219,7 +236,10 @@ bool readFloraBatteryCharacteristic(BLERemoteService* floraService, String baseT
   
   char buffer[512];
 
-  snprintf(buffer, 512, "https://%s/external/api/update?token=%s", BLYNK_HOST, BLYNK_ACCESS_TOKEN);
+  const char* deviceMacAddress = baseTopic.c_str();
+  char* blynkAccessToken = getBlynkAccessToken(deviceMacAddress);
+
+  snprintf(buffer, 512, "https://%s/external/api/update?token=%s", BLYNK_HOST, blynkAccessToken);
   snprintf(buffer+strlen(buffer), 512, "&A4=%d", battery);
   
   Serial.println(buffer);
@@ -316,7 +336,7 @@ void setup() {
 
   Serial.println("Initialize BLE client...");
   BLEDevice::init("");
-  //BLEDevice::setPower(ESP_PWR_LVL_P7);
+  BLEDevice::setPower(ESP_PWR_LVL_P21, ESP_BLE_PWR_TYPE_DEFAULT);
 
   // connecting wifi and mqtt server
   connectWifi();
