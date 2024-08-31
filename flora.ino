@@ -19,10 +19,17 @@ static BLEUUID uuid_write_mode("00001a00-0000-1000-8000-00805f9b34fb");
 
 TaskHandle_t hibernateTaskHandle = NULL;
 
-WiFiClient espClient;
 HTTPClient http;
 
 void connectWifi() {
+  Serial.print("WiFi: mode WIFI_STA\n");
+	WiFi.mode(WIFI_STA);
+
+  // Configures static IP address
+  if (!WiFi.config(IP_ADDRESS, IP_GATEWAY, IP_SUBNET_MASK, IP_PRIMARY_DNS, IP_SECONDARY_DNS)) {
+    Serial.println("STA Failed to configure");
+  }
+
   Serial.println("Connecting to WiFi...");
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
@@ -113,7 +120,7 @@ bool forceFloraServiceDataMode(BLERemoteService* floraService) {
   return true;
 }
 
-bool readFloraDataCharacteristic(BLERemoteService* floraService, String baseTopic) {
+bool readFloraDataCharacteristic(BLERemoteService* floraService, String baseTopic, Flora *flora) {
 
   BLERemoteCharacteristic* floraCharacteristic = nullptr;
 
@@ -172,39 +179,15 @@ bool readFloraDataCharacteristic(BLERemoteService* floraService, String baseTopi
     return false;
   }
 
-  char buffer[512];
-  const char* deviceMacAddress = baseTopic.c_str();
-  char* blynkAccessToken = getBlynkAccessToken(deviceMacAddress);
-
-  snprintf(buffer, 512, "https://%s/external/api/batch/update?token=%s", BLYNK_HOST, blynkAccessToken);
-  snprintf(buffer+strlen(buffer), 512, "&A0=%f", temperature);; 
-  snprintf(buffer+strlen(buffer), 512, "&A1=%d", moisture); 
-  snprintf(buffer+strlen(buffer), 512, "&A3=%d", light);
-  snprintf(buffer+strlen(buffer), 512, "&A2=%d", conductivity);
-
-  Serial.println(buffer);
-
-  http.begin(buffer);
-
-  int httpResponseCode = http.GET();
-
-  if (httpResponseCode>0) {
-    Serial.print("HTTP Response code: ");
-    Serial.println(httpResponseCode);
-    String payload = http.getString();
-    Serial.println(payload);
-  }
-  else {
-    Serial.print("Error code: ");
-    Serial.println(httpResponseCode);
-  }
-  // Free resources
-  http.end();
+  flora->temperature = temperature;
+  flora->moisture = moisture;
+  flora->light = light;
+  flora->conductivity = conductivity;
 
   return true;
 }
 
-bool readFloraBatteryCharacteristic(BLERemoteService* floraService, String baseTopic) {
+bool readFloraBatteryCharacteristic(BLERemoteService* floraService, String baseTopic, Flora *flora) {
   BLERemoteCharacteristic* floraCharacteristic = nullptr;
 
   // get the device battery characteristic
@@ -234,54 +217,29 @@ bool readFloraBatteryCharacteristic(BLERemoteService* floraService, String baseT
   const char *val2 = value.c_str();
   int battery = val2[0];
   
-  char buffer[512];
-
-  const char* deviceMacAddress = baseTopic.c_str();
-  char* blynkAccessToken = getBlynkAccessToken(deviceMacAddress);
-
-  snprintf(buffer, 512, "https://%s/external/api/update?token=%s", BLYNK_HOST, blynkAccessToken);
-  snprintf(buffer+strlen(buffer), 512, "&A4=%d", battery);
-  
-  Serial.println(buffer);
-
-  http.begin(buffer);
-
-  int httpResponseCode = http.GET();
-
-  if (httpResponseCode>0) {
-    Serial.print("HTTP Response code: ");
-    Serial.println(httpResponseCode);
-    String payload = http.getString();
-    Serial.println(payload);
-  }
-  else {
-    Serial.print("Error code: ");
-    Serial.println(httpResponseCode);
-  }
-  // Free resources
-  http.end();
+  flora->battery = battery;
 
   return true;
 }
 
-bool processFloraService(BLERemoteService* floraService, char* deviceMacAddress, bool readBattery) {
+bool processFloraService(BLERemoteService* floraService, char* deviceMacAddress, Flora *flora, bool readBattery) {
   // set device in data mode
   if (!forceFloraServiceDataMode(floraService)) {
     return false;
   }
 
   String baseTopic(deviceMacAddress);
-  bool dataSuccess = readFloraDataCharacteristic(floraService, baseTopic);
+  bool dataSuccess = readFloraDataCharacteristic(floraService, baseTopic, flora);
 
   bool batterySuccess = true;
   if (readBattery) {
-    batterySuccess = readFloraBatteryCharacteristic(floraService, baseTopic);
+    batterySuccess = readFloraBatteryCharacteristic(floraService, baseTopic, flora);
   }
 
   return dataSuccess && batterySuccess;
 }
 
-bool processFloraDevice(BLEAddress floraAddress, char* deviceMacAddress, bool getBattery, int tryCount) {
+bool processFloraDevice(BLEAddress floraAddress, char* deviceMacAddress, Flora *flora, bool getBattery, int tryCount) {
   Serial.print("Processing Flora device at ");
   Serial.print(floraAddress.toString().c_str());
   Serial.print(" (try ");
@@ -302,7 +260,7 @@ bool processFloraDevice(BLEAddress floraAddress, char* deviceMacAddress, bool ge
   }
 
   // process devices data
-  bool success = processFloraService(floraService, deviceMacAddress, getBattery);
+  bool success = processFloraService(floraService, deviceMacAddress, flora, getBattery);
 
   // disconnect from device
   floraClient->disconnect();
@@ -323,7 +281,47 @@ void delayedHibernate(void *parameter) {
   hibernate();
 }
 
+void sendDataToCloud(Flora *floras)
+{
+  for (int i=0; i<deviceCount; i++) {
+    char buffer[512];
+    char* deviceMacAddress = FLORA_DEVICES[i];
+    char* blynkAccessToken = getBlynkAccessToken(deviceMacAddress);
+
+    snprintf(buffer, 512, "https://%s/external/api/batch/update?token=%s", BLYNK_HOST, blynkAccessToken);
+    snprintf(buffer+strlen(buffer), 512, "&A0=%f", floras[i].temperature);; 
+    snprintf(buffer+strlen(buffer), 512, "&A1=%d", floras[i].moisture); 
+    snprintf(buffer+strlen(buffer), 512, "&A3=%d", floras[i].light);
+    snprintf(buffer+strlen(buffer), 512, "&A2=%d", floras[i].conductivity);
+
+    if (floras[i].battery != 0) {
+      snprintf(buffer+strlen(buffer), 512, "&A4=%d", floras[i].battery);
+    }
+
+    Serial.println(buffer);
+
+    http.begin(buffer);
+
+    int httpResponseCode = http.GET();
+
+    if (httpResponseCode>0) {
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpResponseCode);
+      String payload = http.getString();
+      Serial.println(payload);
+    }
+    else {
+      Serial.print("Error code: ");
+      Serial.println(httpResponseCode);
+    }
+    // Free resources
+    http.end();
+  }
+}
+
 void setup() {
+  Flora floras[deviceCount] = { 0 };
+
   // all action is done when device is woken up
   Serial.begin(115200);
   delay(1000);
@@ -336,10 +334,7 @@ void setup() {
 
   Serial.println("Initialize BLE client...");
   BLEDevice::init("");
-  BLEDevice::setPower(ESP_PWR_LVL_P21, ESP_BLE_PWR_TYPE_DEFAULT);
-
-  // connecting wifi and mqtt server
-  connectWifi();
+  //BLEDevice::setPower(ESP_PWR_LVL_P21, ESP_BLE_PWR_TYPE_DEFAULT);
 
   // check if battery status should be read - based on boot count
   bool readBattery = ((bootCount % BATTERY_INTERVAL) == 0);
@@ -352,13 +347,22 @@ void setup() {
 
     while (tryCount < RETRY) {
       tryCount++;
-      if (processFloraDevice(floraAddress, deviceMacAddress, readBattery, tryCount)) {
+      if (processFloraDevice(floraAddress, deviceMacAddress, &floras[i], readBattery, tryCount)) {
         break;
       }
       delay(1000);
     }
     delay(1500);
   }
+
+  BLEDevice::deinit(true);
+
+  delay(1500);
+
+  // connecting wifi and mqtt server
+  connectWifi();
+
+  sendDataToCloud(floras);
 
   // disconnect wifi and mqtt
   disconnectWifi();
