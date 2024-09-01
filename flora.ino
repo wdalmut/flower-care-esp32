@@ -179,6 +179,7 @@ bool readFloraDataCharacteristic(BLERemoteService* floraService, String baseTopi
     return false;
   }
 
+  flora->valid = true;
   flora->temperature = temperature;
   flora->moisture = moisture;
   flora->light = light;
@@ -284,38 +285,40 @@ void delayedHibernate(void *parameter) {
 void sendDataToCloud(Flora *floras)
 {
   for (int i=0; i<deviceCount; i++) {
-    char buffer[512];
-    char* deviceMacAddress = FLORA_DEVICES[i];
-    char* blynkAccessToken = getBlynkAccessToken(deviceMacAddress);
+    if (floras[i].valid == true) {
+      char buffer[512];
+      char* deviceMacAddress = FLORA_DEVICES[i];
+      char* blynkAccessToken = getBlynkAccessToken(deviceMacAddress);
 
-    snprintf(buffer, 512, "https://%s/external/api/batch/update?token=%s", BLYNK_HOST, blynkAccessToken);
-    snprintf(buffer+strlen(buffer), 512, "&A0=%f", floras[i].temperature);; 
-    snprintf(buffer+strlen(buffer), 512, "&A1=%d", floras[i].moisture); 
-    snprintf(buffer+strlen(buffer), 512, "&A3=%d", floras[i].light);
-    snprintf(buffer+strlen(buffer), 512, "&A2=%d", floras[i].conductivity);
+      snprintf(buffer, 512, "https://%s/external/api/batch/update?token=%s", BLYNK_HOST, blynkAccessToken);
+      snprintf(buffer+strlen(buffer), 512, "&A0=%f", floras[i].temperature);; 
+      snprintf(buffer+strlen(buffer), 512, "&A1=%d", floras[i].moisture); 
+      snprintf(buffer+strlen(buffer), 512, "&A3=%d", floras[i].light);
+      snprintf(buffer+strlen(buffer), 512, "&A2=%d", floras[i].conductivity);
 
-    if (floras[i].battery != 0) {
-      snprintf(buffer+strlen(buffer), 512, "&A4=%d", floras[i].battery);
+      if (floras[i].battery != 0) {
+        snprintf(buffer+strlen(buffer), 512, "&A4=%d", floras[i].battery);
+      }
+
+      Serial.println(buffer);
+
+      http.begin(buffer);
+
+      int httpResponseCode = http.GET();
+
+      if (httpResponseCode>0) {
+        Serial.print("HTTP Response code: ");
+        Serial.println(httpResponseCode);
+        String payload = http.getString();
+        Serial.println(payload);
+      }
+      else {
+        Serial.print("Error code: ");
+        Serial.println(httpResponseCode);
+      }
+      // Free resources
+      http.end();
     }
-
-    Serial.println(buffer);
-
-    http.begin(buffer);
-
-    int httpResponseCode = http.GET();
-
-    if (httpResponseCode>0) {
-      Serial.print("HTTP Response code: ");
-      Serial.println(httpResponseCode);
-      String payload = http.getString();
-      Serial.println(payload);
-    }
-    else {
-      Serial.print("Error code: ");
-      Serial.println(httpResponseCode);
-    }
-    // Free resources
-    http.end();
   }
 }
 
@@ -334,7 +337,7 @@ void setup() {
 
   Serial.println("Initialize BLE client...");
   BLEDevice::init("");
-  //BLEDevice::setPower(ESP_PWR_LVL_P21, ESP_BLE_PWR_TYPE_DEFAULT);
+  BLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_DEFAULT);
 
   // check if battery status should be read - based on boot count
   bool readBattery = ((bootCount % BATTERY_INTERVAL) == 0);
